@@ -1,0 +1,250 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\setlength{\paperheight}{11.7in} % set dimension of \paperwidth to 25 cm
+\setlength{\paperwidth}{8.27in}
+%%\addtolength{\paperheight}{2in} % enlarge \paperheight by 1 inch
+\usepackage[portuguese]{babel}
+\usepackage{longtable,booktabs}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{indentfirst}
+\usepackage{color}
+\usepackage{caption}
+\usepackage{amsfonts}
+\usepackage{float}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{lmodern}
+\usepackage{subfigure}
+\usepackage{caption}
+\captionsetup{font=small}% \captionsetup{font=footnotesize}
+\usepackage[left=1.5cm, right = 2cm, top=3cm,bottom=2.6cm]{geometry}
+\fontsize{12pt}{10cm}\selectfont
+\title{Análise descritiva e preditiva sobre \\ segmentação dos clientes Duas Rodas}
+\usepackage{float}
+\usepackage{fancyhdr}
+%% SET DEFAULT FONTFD  
+\usepackage{mathptmx}
+\usepackage[T1]{fontenc}
+%% \usepackage[T1]{fontenc}
+%% \usepackage{times}
+%% \usepackage{PTSerifCaption} 
+%% \usepackage[T1]{fontenc}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{Mobills Labs}
+\fancyhead[RE,LO]{{\small\scshape Relatório de Análise descritiva}}
+\fancyfoot[CE,CO]{{\small\leftmark}}
+\fancyfoot[LE,RO]{{\small\thepage}}
+
+\renewcommand{\headrulewidth}{2pt}
+\renewcommand{\footrulewidth}{1pt}
+\begin{document}
+
+
+\begin{titlepage}
+\begin{center}
+\begin{minipage}{5in}
+\begin{center}
+\hspace{-1cm}
+\includegraphics[scale=0.23]{figure/logo.png}
+\vspace{3.5cm}\\
+{\large \scshape Relatório de Análise Descritiva}\\
+\vspace{14cm}
+{\hspace{1cm}
+{\Large FORTALEZA \\ \hspace{1cm} 2018}}
+\end{center}
+\thispagestyle{empty}
+\end{minipage}
+\end{center}
+\end{titlepage}
+
+\newpage
+\section{Análise das despesas}
+
+<<message=FALSE,echo=FALSE>>=
+library("data.table")
+library("readxl")
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(tibble)
+library(lubridate)
+library("knitr")
+library(scorecard)
+library(extrafont)
+library(purrr)
+source("~/projetos/Consulta Mobills/src/MyGgthemes.R")
+source("~/projetos/Consulta Mobills/src/rpsi.R")
+
+knitr::opts_chunk$set(message=FALSE, 
+                      size='tiny',
+                      fig.width = 10,
+                      fig.height = 5,
+                      dpi=120,
+                      fig.pos = 'H')
+options(scipen=9999)
+
+temaMobills <- theme(
+    text = element_text(family="CM Roman"),
+    panel.background = element_rect(fill="black"),
+    plot.background = element_rect(fill="black"),
+    axis.title = element_text(size=12),
+    panel.grid.major = element_line(linetype=2,size=0.1,colour="grey60"),
+    panel.grid.minor = element_line(linetype=2,size=0.1,colour="grey20"),
+    axis.text = element_text(colour="white"),
+    axis.title.x  = element_text(colour="white"),
+    plot.title = element_text(colour="white",family = "CM Roman",size=17),
+    plot.subtitle = element_text(size=10,colour="white"),
+    legend.position = "none",
+    strip.background = element_rect(fill = "white"),
+    strip.placement = "outside",
+    panel.spacing.x = unit("2","lines") )
+@
+
+
+<<>>=
+setwd("projetos/Consulta Mobills/")
+Despesas <- fread("./data/dadosReceitasUsers/Despesas20190711.csv")
+Despesas2018 <- fread("./data/dadosReceitasUsers/Despesas20180107.csv")
+Despesas <- do.call("rbind", list(Despesas,Despesas2018))
+Despesas %>% mutate(ano= lubridate::year(DataDespesa),mes = lubridate::month(DataDespesa)) -> Despesas
+DespesasCat <-data.table::fread("~/Área de trabalho/dadosReceitasUsers/TipoDespesas.csv")
+rm(Despesas2018)
+
+@
+As medidas de resumo mostram que claramente há valores inválidos e outliers nos dados.
+
+<<>>=
+Despesas$Valor <- gsub(pattern = ",",replacement = ".", Despesas$Valor)
+Despesas$Valor <- as.numeric(Despesas$Valor)
+@
+<<>>=
+Despesas %>% 
+  select(ano,Valor)%>%
+  split(.$ano) %>%
+  map(summary)
+
+@
+Para plotar o Histograma dos Valores gastos(Despesas) vamos limitar a variável `Valor` em até 1000 reais. Tendo em vista que quase a totalidade dos dadados se concentram nesse intervalo.
+<<>>=
+Despesas %>%
+  group_by(UsuarioId,
+           dia = lubridate::day(DataDespesa),
+           mes = lubridate::month(DataDespesa),
+           ano = lubridate::year(DataDespesa)) %>%
+    summarise(count = n(), valorSoma= sum(Valor)) %>%
+    arrange(desc(valorSoma)) -> desp
+
+
+
+Despesas %>% dplyr::filter(Valor > 0 & Valor < 1000) %>%
+    ggplot(aes(Valor,y=..density..))+
+    geom_histogram(fill="white",alpha=0.8)+
+    facet_grid(~ano )+temaMobills+
+        labs(title="Distribuição das despesas")+
+    scale_x_continuous(limits=c(0,1000))
+
+
+##histogram by month
+Despesas %>% dplyr::filter(Valor > 0 & Valor < 1000) %>%
+    ggplot(aes(Valor,y=..density..))+
+    geom_histogram(fill="white",alpha=0.8)+
+    facet_grid(~ano )+temaMobills+
+        labs(title="Distribuição das despesas")+
+    scale_x_continuous(limits=c(0,1000))+
+  facet_wrap(~mes)
+    
+@
+
+
+<<>>=
+
+desp %>%
+  group_by(mes,ano) %>%
+  summarise(contagem=n()) %>%
+  ggplot(aes(mes, contagem,labs=contagem))+
+  geom_col(aes(fill=contagem),
+           width = 0.5)+
+  scale_fill_viridis(option="magma",begin=0.5)+
+  labs(title="Quantidade de Despesas por mês",
+       subtitle = "Usuarios de 16 à 24 anos, no periodo de 11 de Julho à 10 de Outubro.",
+       x="Mês",
+       y="Quantidade de despesas")+
+  temaMobills+
+  scale_y_continuous(limits = c(0,100000),
+                       expand=c(0.01009,0.000000001),
+                       breaks = seq(0,150000,10000))+
+  geom_text(aes(label=contagem),
+              size=3.5,
+              colour="white",
+              vjust=-0.2)+
+  facet_grid(~ano)
+
+@
+
+
+<<fig.width=9,fig.height=7>>=
+
+Despesas %>%
+    group_by(Descricao) %>%
+    summarise(count = n(), valorSoma= sum(Valor)) %>%
+    top_n(100000) %>% filter(count > 3000) %>% arrange(desc(count))%>%
+  ggplot(aes(x=reorder(Descricao,count,max),count),labels=count)+geom_col(fill="white",width = 0.5)+
+  coord_flip()+
+  temaMobills+
+  theme(axis.text = element_text(size=7),
+        panel.grid.major.x =element_line(colour="white",linetype = 1),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.y = element_line(size=0.1))+
+  geom_text(aes(label=count),colour="white",size=3,hjust=-0.5)+
+  scale_y_continuous(limits=c(0,32000))
+
+@
+
+<<fig.width=9,fig.height=7>>=
+Despesas %>%
+    group_by(Descricao) %>%
+    summarise(count = n(), valorSoma= sum(Valor)) %>%
+    top_n(100000) %>% filter(count <3000,count>1500) %>% arrange(desc(count))%>%
+  ggplot(aes(x=reorder(Descricao,count,max),count),labels=count)+geom_col(fill="white",width = 0.5)+
+  coord_flip()+
+  temaMobills+
+  theme(axis.text = element_text(size=7),
+        panel.grid.major.x =element_line(colour="white",linetype = 1),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.y = element_line(size=0.1))+
+  geom_text(aes(label=count),colour="white",size=3,hjust=-0.5)+
+  scale_y_continuous(limits=c(0,32000))
+
+@
+
+Agora iremos agrupar as depesas por categoria
+
+<<>>=
+
+
+DespesasCat <- mutate(DespesasCat, 
+                      chave = paste0(DespesasCat$Id,DespesasCat$UsuarioId))
+Despesas <- mutate(Despesas, 
+                      chave = paste0(Despesas$TipoDespesaId,Despesas$UsuarioId))
+Despesas2 <- left_join(Despesas,DespesasCat,by=c('chave' = 'chave'))
+
+Despesas2 %>% mutate(chaveUnica = paste0(Descricao, Nome, UsuarioId.x),
+                     dia = lubridate::day(Despesas2$DataDespesa),
+                     mes = lubridate::month(Despesas2$DataDespesa),
+                     ano = lubridate::year(Despesas2$DataDespesa)) -> Despesas2
+
+Despesas2 %>% select(Descricao,Nome,TipoDespesaId,UsuarioId.x,UsuarioId.y,chaveUnica,mes) %>% distinct() %>% View()
+Despesas2[unique(Despesas2$chaveUnica), ]
+Despesas2[duplicated(Despesas2$chaveUnica), ]%>% View
+length(Despesas2$chaveUnica)
+
+
+Despesas2 %>% group_by(Descricao,Nome,mes) %>% summarise(contagem= n()) %>% top_n(100) %>% View()
+
+@
+
+\end{document}

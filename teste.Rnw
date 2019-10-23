@@ -1,0 +1,453 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\setlength{\paperheight}{11.7in} % set dimension of \paperwidth to 25 cm
+\setlength{\paperwidth}{8.27in}
+%%\addtolength{\paperheight}{2in} % enlarge \paperheight by 1 inch
+\usepackage[portuguese]{babel}
+\usepackage{longtable,booktabs}
+\usepackage[T1]{fontenc}
+\usepackage{a msmath}
+\usepackage{indentfirst}
+\usepackage{color}
+\usepackage{caption}
+\usepackage{amsfonts}
+\usepackage{float}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{lmodern}
+\usepackage{subfigure}
+\usepackage{caption}
+\captionsetup{font=small}% \captionsetup{font=footnotesize}
+\usepackage[left=1.5cm, right = 2cm, top=3cm,bottom=2.6cm]{geometry}
+\fontsize{12pt}{10cm}\selectfont
+\title{Análise descritiva e preditiva sobre \\ segmentação dos clientes Duas Rodas}
+\usepackage{float}
+\usepackage{fancyhdr}
+%% SET DEFAULT FONTFD  
+\usepackage{mathptmx}
+\usepackage[T1]{fontenc}
+%% \usepackage[T1]{fontenc}
+%% \usepackage{times}
+%% \usepackage{PTSerifCaption} 
+%% \usepackage[T1]{fontenc}
+
+
+\usepackage[T1]{fontenc}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{Mobills Labs}
+\fancyhead[RE,LO]{{\small\scshape Relatório de Análise descritiva}}
+\fancyfoot[CE,CO]{{\small\leftmark}}
+\fancyfoot[LE,RO]{{\small\thepage}}
+
+\renewcommand{\headrulewidth}{2pt}
+\renewcommand{\footrulewidth}{1pt}
+\begin{document}
+
+
+\begin{titlepage}
+\begin{center}
+\begin{minipage}{5in}
+\begin{center}
+\hspace{-1cm}
+\includegraphics[scale=0.23]{figure/logo.png}
+\vspace{3.5cm}\\
+{\large \scshape Relatório de Análise Descritiva}\\
+\vspace{14cm}
+{\hspace{1cm}
+{\Large FORTALEZA \\ \hspace{1cm} 2018}}
+\end{center}
+\thispagestyle{empty}
+\end{minipage}
+\end{center}
+\end{titlepage}
+
+\newpage
+\section{Análise das despesas}
+A seguir temos o TOP 100 das Despesas que mais aparecem no dataset: 
+<<message=FALSE,echo=FALSE>>=
+library("data.table")
+library("readxl")
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(treemap)
+library(tibble)
+library(lubridate)
+library("knitr")
+library(scorecard)
+library(extrafont)
+library(purrr)
+library(tm)
+library("SnowballC")
+library("wordcloud")
+library("RColorBrewer")
+source("~/projetos/Consulta Mobills/src/MyGgthemes.R")
+source("~/projetos/Consulta Mobills/src/rpsi.R")
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+
+knitr::opts_chunk$set(message=FALSE, 
+                      size='small',
+                      fig.width = 10,
+                      fig.height = 5,
+                      dpi=300,
+                      fig.pos = 'H',
+                      warning = FALSE)
+options(scipen=9999)
+
+temaMobills <- theme(
+    text = element_text(family="CM Roman"),
+    panel.background = element_rect(fill="black"),
+    plot.background = element_rect(fill="black"),
+    axis.title = element_text(size=12),
+    panel.grid.major = element_line(linetype=1,size=0.1,colour="grey60"),
+    panel.grid.minor = element_line(linetype=1,size=0.1,colour="grey20"),
+    axis.text = element_text(colour="white"),
+    axis.title.x  = element_text(colour="white"),
+    plot.title = element_text(colour="white",family = "CM Roman",size=17),
+    plot.subtitle = element_text(size=10,colour="white"),
+    legend.position = "none",
+    strip.background = element_rect(fill = "white"),
+    strip.placement = "outside",
+    panel.spacing.x = unit("2","lines") )
+@
+
+
+<<echo=FALSE>>=
+##setwd("projetos/Consulta Mobills/")
+Despesas <- fread("./data/dadosReceitasUsers/Despesas20190711.csv")
+Despesas2018 <- fread("./data/dadosReceitasUsers/Despesas20180107.csv")
+Despesas <- do.call("rbind", list(Despesas,Despesas2018))
+Despesas %>% mutate(ano= lubridate::year(DataDespesa),
+                    mes = lubridate::month(DataDespesa)) -> Despesas
+DespesasCat <- data.table::fread("~/Área de trabalho/dadosReceitasUsers/TipoDespesas.csv")
+
+Receitas <- data.table::fread("~/Área de trabalho/dadosReceitasUsers/Receitas20190711.csv")
+Receitas2018 <- data.table::fread("~/Área de trabalho/dadosReceitasUsers/Receitas20180107.csv")
+Receitas <- do.call("rbind", list(Receitas,Receitas2018))
+Receitas$Valor <- gsub(pattern = ",",replacement = ".", Receitas$Valor)
+Receitas$Valor <- as.numeric(Receitas$Valor)
+ReceitasCat <- data.table::fread("~/Área de trabalho/dadosReceitasUsers/TipoREceitas.csv")
+
+rm(list=c("Receitas2018","Despesas2018"))
+gc()
+
+@
+As medidas de resumo mostram que claramente há valores inválidos e outliers nos dados.
+
+<<echo=FALSE>>=
+library("gdata")
+Despesas$Valor <- gsub(pattern = ",",replacement = ".", Despesas$Valor)
+Despesas$Valor <- as.numeric(Despesas$Valor)
+
+Despesas$Descricao <- gsub(pattern = "\"",replacement = "",Despesas$Descricao)
+Despesas$Descricao <- gsub(pattern = "🚘" ,replacement = "", Despesas$Descricao)
+
+
+<<>>=
+Despesas %>% 
+  select(ano,Valor)%>%
+  split(.$ano) %>%
+  map(summary)
+
+@
+Para plotar o Histograma dos Valores gastos(Despesas) vamos limitar a variável `Valor` em até 1000 reais. T
+endo em vista que quase a totalidade dos dadados se concentram nesse intervalo.
+<<>>=
+Despesas %>%
+  group_by(UsuarioId,
+           dia = lubridate::day(DataDespesa),
+           mes = lubridate::month(DataDespesa),
+           ano = lubridate::year(DataDespesa)) %>%
+    summarise(count = n(), valorSoma= sum(Valor)) %>%
+    arrange(desc(valorSoma)) -> desp
+
+
+
+Despesas %>% dplyr::filter(Valor > 0 & Valor < 1000) %>%
+    ggplot(aes(Valor,y=..density..))+
+    geom_histogram(fill="white",alpha=0.8)+
+    facet_grid(~ano )+temaMobills+
+        labs(title="Distribuição das despesas")+
+    scale_x_continuous(limits=c(0,1000))
+
+
+##histogram by month
+Despesas %>% dplyr::filter(Valor > 0 & Valor < 1000) %>%
+    ggplot(aes(Valor,y=..density..))+
+    geom_histogram(fill="white",alpha=0.8)+
+    facet_grid(~ano )+temaMobills+
+        labs(title="Distribuição das despesas")+
+    scale_x_continuous(limits=c(0,1000))+
+  facet_wrap(~mes)
+@
+
+
+<<>>=
+
+desp %>%
+  group_by(mes,ano) %>%
+  summarise(contagem=n()) %>%
+  ggplot(aes(mes, contagem,labs=contagem))+
+  geom_col(aes(fill=contagem),
+           width = 0.5)+
+  scale_fill_viridis(option="magma",begin=0.5)+
+  labs(title="Quantidade de Despesas por mês",
+       subtitle = "Usuarios de 16 à 24 anos, no periodo de 11 de Julho à 10 de Outubro.",
+       x="Mês",
+       y="Quantidade de despesas")+
+  temaMobills+
+  scale_y_continuous(limits = c(0,100000),
+                       expand=c(0.01009,0.000000001),
+                       breaks = seq(0,150000,10000))+
+  geom_text(aes(label=contagem),
+              size=3.5,
+              colour="white",
+              vjust=-0.2)+
+  facet_grid(~ano)
+
+@
+
+
+<<fig.width=9,fig.height=7>>=
+
+Despesas %>%
+    group_by(Descricao) %>%
+    summarise(count = n(), valorSoma= sum(Valor)) %>%
+    top_n(100000) %>% filter(count > 3000) %>% arrange(desc(count))%>%
+  ggplot(aes(x=reorder(Descricao,count,max),count),labels=count)+
+  geom_col(fill="white",width = 0.5)+
+  coord_flip()+
+  temaMobills+
+  theme(axis.text = element_text(size=7),
+        panel.grid.major.x =element_line(colour="white",linetype = 1),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.y = element_line(size=0.1))+
+  geom_text(aes(label=count),colour="white",size=3,hjust=-0.5)+
+  scale_y_continuous(limits=c(0,32000))
+
+@
+
+
+
+<<fig.width=9,fig.height=7>>=
+Despesas %>%
+    group_by(Descricao) %>%
+    summarise(count = n(), valorSoma= sum(Valor)) %>%
+    top_n(100000) %>% filter(count <3000,count>1500) %>%
+  arrange(desc(count))%>%
+  ggplot(aes(x=reorder(Descricao,count,max),count),labels = count)+
+  geom_col(fill="white",width = 0.5)+
+  coord_flip()+
+  temaMobills+
+  theme(axis.text = element_text(size=7),
+        panel.grid.major.x =element_line(colour="white",linetype = 1),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.major.y = element_line(size=0.1))+
+  geom_text(aes(label=count),colour="white",size=3,hjust=-0.5)+
+  scale_y_continuous(limits=c(0,32000))
+
+@
+
+Qual o tipo  de despesa com o maior gasto total?
+
+<<>>=
+Despesas %>%
+    dplyr::filter(Valor > 0 & Valor < 2000) %>%
+    group_by(Descricao) %>%
+    summarise(count = n(), valorSoma= sum(Valor)) %>% 
+    arrange(desc(valorSoma)) %>% top_n(20)
+
+@
+
+
+
+Agora iremos agrupar as depesas por categoria
+
+<<>>=
+
+DespesasCat <- mutate(DespesasCat, 
+                      chave = paste0(DespesasCat$Id,DespesasCat$UsuarioId))
+Despesas <- mutate(Despesas, 
+                      chave = paste0(Despesas$TipoDespesaId,Despesas$UsuarioId))
+Despesas2 <- left_join(Despesas,DespesasCat,by=c('chave' = 'chave'))
+
+Despesas2 %>% mutate(chaveUnica = paste0(Descricao, Nome, UsuarioId.x),
+                     dia = lubridate::day(Despesas2$DataDespesa),
+                     mes = lubridate::month(Despesas2$DataDespesa),
+                     ano = lubridate::year(Despesas2$DataDespesa)) -> Despesas2
+
+##Despesas2 %>% select(Descricao,
+##Nome,
+##TipoDespesaId,
+##UsuarioId.x,
+##UsuarioId.y,
+##chaveUnica,
+##mes) %>% 
+##distinct() %>% View()
+##Despesas2[unique(Despesas2$chaveUnica), ] 
+##Despesas2[duplicated(Despesas2$chaveUnica), ]%>% View
+##length(Despesas2$chaveUnica)
+
+
+##Despesas2 %>% group_by(Descricao,Nome,mes) %>% 
+##summarise(contagem= n()) %>%
+##top_n(100) %>% View()
+
+@
+
+<<>>=
+text <- readLines("./texto.txt")
+docs <- Corpus(VectorSource(text))
+docs <- tm_map(docs, toSpace, "/")
+docs <- tm_map(docs, toSpace, "@")
+docs <- tm_map(docs, toSpace, "\\|")
+tm_ma
+docs <- tm_map(docs, content_transformer(tolower))
+# Remove numbers
+docs <- tm_map(docs, removeNumbers)
+# Remove english common stopwords
+docs <- tm_map(docs, removeWords, stopwords("portuguese"))
+# Remove your own stop word
+# specify your stopwords as a character vector
+docs <- tm_map(docs, removeWords, c("blabla1", "blabla2")) 
+# Remove punctuations
+docs <- tm_map(docs, removePunctuation)
+# Eliminate extra white spaces
+docs <- tm_map(docs, stripWhitespace)
+# Text stemming
+# docs <- tm_map(docs, stemDocument)
+
+dtm <- TermDocumentMatrix(docs)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d,20)
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq,scale=c(3,0.6), min.freq = 500,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+@
+
+<<>>=
+ 
+# Build Dataset
+
+Despesas2 %>% select(Nome,Descricao) %>% 
+  group_by(Nome,Descricao) %>% 
+  summarise(count=n()) %>% arrange(desc(count)) %>% top_n(50) %>% head(100) %>%
+  treemap(index=c("Nome","Descricao"),
+            vSize="count",
+            vColor = "Nome",
+            type="index",range=c(0,10000)
+            ) 
+@
+\section{Análise das Receitas}
+<<echo=FALSE>>=
+
+ReceitasCat <- mutate(ReceitasCat, 
+                      chave = paste0(ReceitasCat$Id,ReceitasCat$UsuarioId))
+Receitas <- mutate(Receitas, 
+                      chave = paste0(Receitas$TipoReceitaId,Receitas$UsuarioId))
+Receitas2 <- left_join(Receitas,ReceitasCat,by=c('chave' = 'chave'))
+
+Receitas2 %>% mutate(chaveUnica = paste0(Descricao, Nome, UsuarioId.x),
+                     dia = lubridate::day(Receitas2$DataReceita),
+                     mes = lubridate::month(Receitas2$DataReceita),
+                     ano = lubridate::year(Receitas2$DataReceita)) -> Receitas2
+
+# Receitas %>% 
+#   group_by(Descricao,DataReceita,TipoReceitaId) %>% 
+#   summarise(countData=n()) %>% arrange(desc(countData))
+# 
+# Receitas %>% mutate(mes = lubridate::month(DataReceita), 
+#                     ano = lubridate::year(DataReceita)) %>% 
+#   filter(mes %in% 7:9, ano ==2018) %>% group_by(DataReceita) %>%
+#   summarise(contagem= n()) %>% arrange(desc(contagem)) -> mes9
+# 
+# Receitas %>% mutate(mes = lubridate::month(DataReceita),
+#                     ano = lubridate::year(DataReceita)) %>% 
+#   filter(mes %in% 7:9, ano ==2019) %>% group_by(DataReceita) %>%
+#   summarise(contagem= n()) %>% arrange(desc(contagem)) -> mes9
+
+# mes8$DataReceita %>% as.Date() -> mes8$DataReceita
+# mes8 %>% group_by(DataReceita) %>% summarise(contagem = n()) %>%
+#   ggplot(aes(DataReceita,contagem))+geom_path(colour="white")+temaMobills+
+#   scale_x_date(date_breaks = "4 day", date_labels = "%m-%d",date_minor_breaks = "1 day")
+# 
+# mes9$DataReceita %>% as.Date() -> mes9$DataReceita
+# mes9 %>% group_by(DataReceita) %>% summarise(contagem = n()) %>%
+#   ggplot(aes(DataReceita,contagem))+geom_path(colour="white")+temaMobills+
+#   scale_x_date(date_breaks = "4 day", date_labels = "%m-%d",date_minor_breaks = "1 day")
+# 
+# meses <- rbind(mes8,mes9)
+# 
+# meses %>% group_by(DataReceita) %>% 
+#   summarise(contagem=n()) %>%
+#   ggplot(aes(DataReceita,contagem,group = lubridate::year(DataReceita)))+
+#   geom_path(colour="white")+
+#   temaMobills+
+#   scale_x_date(date_breaks = "40 day", date_labels = "%m-%d",date_minor_breaks = "1 day")+
+#   facet_wrap(~lubridate::year(DataReceita))
+
+@
+
+
+<<echo=FALSE>>=
+Receitas2 %>% select(Nome,Descricao) %>% 
+  group_by(Nome,Descricao) %>% 
+  summarise(count=n()) %>% arrange(desc(count)) %>% top_n(500) %>% 
+  head(500) %>%
+  treemap(index=c("Nome","Descricao"),
+          vSize="count",
+          vColor = "Nome",
+          palette="Greens",
+          type="index",range=c(-1200,100000),
+          fontsize.labels=c(8,10),
+          overlap.labels=0.5,  
+          inflate.labels=F,
+          aspRatio =2.5,
+          algorithm='pivotSize',
+          border.lwds=0.3
+  )
+@
+
+<<cloundReceitas>>=
+textr <- readLines("./textoReceitas.txt")
+docsr <- Corpus(VectorSource(textr))
+docsr <- tm_map(docsr, toSpace, "/")
+docsr <- tm_map(docsr, toSpace, "@")
+docsr <- tm_map(docsr, toSpace, "\\|")
+
+docsr <- tm_map(docsr, content_transformer(tolower))
+# Remove numbers
+docsr <- tm_map(docsr, removeNumbers)
+# Remove english common stopwords
+docsr <- tm_map(docsr, removeWords, stopwords("portuguese"))
+# Remove your own stop word
+# specify your stopwords as a character vector
+##docsr <- tm_map(docsr, removeWords, c("blabla1", "blabla2")) 
+# Remove punctuations
+docsr <- tm_map(docsr, removePunctuation)
+# Eliminate extra white spaces
+docsr <- tm_map(docsr, stripWhitespace)
+# Text stemming
+# docs <- tm_map(docs, stemDocument)
+
+dtmr <- TermDocumentMatrix(docsr)
+mr <- as.matrix(dtmr)
+vr <- sort(rowSums(mr),decreasing=TRUE)
+dr <- data.frame(word = names(vr),freq=vr)
+head(dr,10)
+set.seed(1234)
+wordcloud(words = dr$word, freq = dr$freq,scale=c(3,0.4), min.freq = 200,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+
+@
+
+\end{document}
+
+
